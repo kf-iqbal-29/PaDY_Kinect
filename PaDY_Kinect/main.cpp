@@ -8,10 +8,13 @@
 #include "filter.h"
 #include "MPC.h"
 #include "ArmParams.h"
-//#include "GMM.h" //20200628
+#include "GMM.h" //20200628
+
+#define distance_for_termination 0.01
+#define velocity_for_termination 0.1
 
 #define SAMPLING_TIME 30 //(ms)
-#define RSTART_TIMING 100
+#define RSTART_TIMING 600
 
 #define INITIAL_J1 (90 * DEG2RAD)		// joint angles of the two arms of paddy 
 #define INITIAL_J2 (-180 * DEG2RAD)
@@ -20,24 +23,21 @@
 #define OFFSET_Y 0.5       //(m)
 #define LOG_SIZE 100000
 
-#define distance_for_termination 0.2  // The distance between end-effector and worker body that would fulfill the termination condition
-#define velocity_for_termination 0.05 // The velocity difference between end-effector velocity and desired velocity that would fulfill the termination condition
-
 GetState* kinect;//Object for Kinect and linear filter
-Linear* MAF;	// MAF = Moving Average Filter
+Linear* MAF;		// MAF = Moving Average Filter
 Linear* MAF2; 
 MPC mpc;
+Filter* Kalman;
 
 unsigned long Start_t, End_t; 
-double Arm_Length; 
+double ARM; 
 pos2d_t FirstLink; 
-pos3d_t Delivery_Pos;
-pos3d_t RShould, LShould, LHand, RHand, LElbow, RElbow, Body; ;
+pos3d_t Del_Pos;
+pos3d_t RShould, LShould, LHand, RHand, LElbow, RElbow, Body;
 pos3d_t End_Pos;
 pos4d_t Output;
 
 
-// For writing the log of robot
 int log_counter = 0;
 Eigen::Vector2d RobotAngleLog[LOG_SIZE];
 Eigen::Vector2d RobotAnVelLog[LOG_SIZE];
@@ -46,6 +46,7 @@ Eigen::Vector2d RobotEndVelLog[LOG_SIZE];
 Eigen::Vector2d RobotDelPosLog[LOG_SIZE];
 Eigen::Vector2d RobotAnAccLog[LOG_SIZE]; 
 
+//Write the log data
 void WriteLog()
 {
 
@@ -76,8 +77,8 @@ void WriteLog()
 	std::cout << "----------  Log Finish  ----------" << std::endl;
 }
 
-// For writing the Log of Kinect
-unsigned int kinect_counter = 0;
+// Log Data for Kinect
+int kinect_counter = 0;
 pos3d_t KinectData_LShould[LOG_SIZE];
 pos3d_t KinectData_RShould[LOG_SIZE];
 pos3d_t KinectData_RElbow[LOG_SIZE];
@@ -95,7 +96,7 @@ void WriteKinectLog()
 		<< "," << "Right Shoulder [x]" << "," << "Right Shoulder [y]" << "," << "Right Shoulder [z]"
 		<< "," << "Right Elbow [x]" << "," << "Right Elbow [y]" << "," << "Right Elbow [z]"
 		<< "," << "Right Hand [x]" << "," << "Right Hand [y]" << "," << "Right Hand [z]";
-
+		
 	ofs << std::endl;
 	for (int i = 0; i < kinect_counter; ++i) {
 		ofs << i * SAMPLING_TIME * 0.001 << ","
@@ -132,18 +133,19 @@ void Display(LPVOID	pParam)
 
 void GetState::UpdateColorFrame()   
 {
+
 	/*
 	if (!ColorFrameReader){
-		std::cout << "Error : ColorFrameReader" << std::endl;
-		return;
+	std::cout << "Error : ColorFrameReader" << std::endl;
+	return;
 	}
-	
+
 	//Get ColorFrame
 	ComPtr<IColorFrame> ColorFrame;
 	auto ret = ColorFrameReader->AcquireLatestFrame(&ColorFrame);
 	*/
 	bool ret = S_OK;
-	if (ret == S_OK){
+	if (ret == S_OK) {
 		/*
 		ComPtr<IFrameDescription> ColorFrameDescription;
 
@@ -163,13 +165,13 @@ void GetState::UpdateColorFrame()
 
 		//color image
 		//cv::Mat colorImage(Height, Width, CV_8UC4, &Buffer[0]);
-		
+
 		//Make the window
 		//cv::resize(colorImage, colorImage, cv::Size(), 0.5, 0.5);//Resize
 
 		// Extract position of the hands and shoulders in the camera image
 		//pos2d_t Left_H, Right_H, Left_S, Right_S, Left_E, Right_E;
-		
+
 		//CameraSpacePoint HandLeft = kinect->joints[JointType_HandLeft].Position; 
 		//CameraSpacePoint HandRight = kinect->joints[JointType_HandRight].Position; 
 		//Left_H = kinect->BodyToScreen(HandLeft, Width, Height); 
@@ -178,14 +180,14 @@ void GetState::UpdateColorFrame()
 		//Left_E = kinect->BodyToScreen(kinect->joints[JointType_ElbowLeft].Position, Width, Height);
 		//Left_S = kinect->BodyToScreen(kinect->joints[JointType_ShoulderLeft].Position, Width, Height);
 		//Right_S = kinect->BodyToScreen(kinect->joints[JointType_ShoulderRight].Position, Width, Height);
-		
+
 		// Draw arms 
 		//colorImage = kinect->Draw(Left_H, Left_E, Left_S, colorImage); 
 		//colorImage = kinect->Draw(Right_H, Right_E, Right_S, colorImage); 
 
 		//Show the color image
 		//cv::imshow("GetState", colorImage);
-    
+
 
 		// Show the position of the worker on the grid
 		//pos3d_t Position = kinect->TransKinectToRealWorld3D(kinect->joints[JointType_SpineBase].Position); 
@@ -197,48 +199,74 @@ void GetState::UpdateColorFrame()
 		//Position.y = Position.y + OFFSET_Y;
 
 
-		kinect->UpSideVision(Body, LShould, RShould, Delivery_Pos, Output.x, Output.y, End_Pos, FirstLink); 
+		kinect->UpSideVision(Body, LShould, RShould, Del_Pos, Output.x, Output.y, End_Pos, FirstLink);
 
-		return; 
+		return;
 	}
+}
+
+// For Timer 
+double PCFreq = 0.0;
+__int64 CounterStart = 0;
+
+void StartCounter()
+{
+	LARGE_INTEGER li;
+	if (!QueryPerformanceFrequency(&li))
+		std::cout << "QueryPerformanceFrequency failed!\n";
+
+	PCFreq = double(li.QuadPart) / 1000.0;
+
+	QueryPerformanceCounter(&li);
+	CounterStart = li.QuadPart;
+}
+double GetCounter()
+{
+	LARGE_INTEGER li;
+	QueryPerformanceCounter(&li);
+	return double(li.QuadPart - CounterStart) / PCFreq;
 }
 
 
 int main()
 {
-	bool useKinect = false; // do you want to use Kinect in real time? or do you want to use Kinect Log Data?
+	StartCounter();
+
+	bool useKinect = true; // do you want to use Kinect in real time? or do you want to use Kinect Log Data?
+	bool use_GMM = false; //Do you want to use GMM or not?
+
 	int j, i = 0;
-	int cnt = 0;
 	double Filt[2], Array[20][4], BodyValues[3], R_temp[3], L_temp[3];
 	double desTime, outTime = 0;
 	Eigen::Vector4d des_x;  //Target state
-	Eigen::Vector4d f;      // f is system state [x,y,x_dot,y_dot] 
+	Eigen::Vector4d f;      //X_dot vector in configuration space
 	Eigen::Vector4d cur_x;  //Current state
 	Eigen::Vector2d input;  //Input vector
 	Eigen::Vector2d end_pos, end_vel;// EndEffector state
-
-	/*bool use_GMM = true; //20200628 Do you want to use GMM?
 
 	GMM Worker_GMM; //20200628 
 	int sample_no = 0; //20200628 The samples under consideration for GMMM
 	sample_no = Worker_GMM.ReadModelInfo();  // 20200628 Read Model info to initialize GMM
 	Eigen::Vector2d pos; //20200628 Current position of worker (Taken from Kinect sensor reading)
 	static std::vector<Eigen::Vector2d, Eigen::aligned_allocator<Eigen::Vector2d>> temp;	//20200628 For temporary storage of observation points
-	*/
-	//int faces[BODY_COUNT]; 
+
+	int faces[BODY_COUNT]; 
 	int BackP = 0; 
 	double FTrackState = 0;//Tracking state of face
 	double FaceFilt[2]; 
 
 	HANDLE hThread;//Handle of thread for showing the color image
+	pos3d_t LHand, RHand, LElbow, RElbow, Body; 
 
 	//Generate the object for Kinect and filters
 	kinect = new GetState();  
 	MAF = new Linear(); 
 	MAF2 = new Linear();	
-
+	Kalman = new Filter(); 
 
 	//Make the thread for showing the color image
+	//hThread = (HANDLE)_begiAL_J1;
+	//cur_x(1) = INITnthread(Display, 0, NULL);
 	hThread = (HANDLE)_beginthread(Display, 0, NULL);
 
 	//Initialize the robot position
@@ -252,8 +280,6 @@ int main()
 	FirstLink.x = L1*cos(INITIAL_J1); 
 	FirstLink.y = L1*sin(INITIAL_J1); 
 
-	cnt = 0; 
-
 	// If you are using kinect then initialize it. Otherwise load data from a log file.
 	if (useKinect)
 	{
@@ -261,6 +287,8 @@ int main()
 	}
 	else
 		kinect->ReadSampleData();
+
+	unsigned int cnt = 0;
 
 	// Get the data as long as a key is not pressed 
 	while (!_kbhit()){
@@ -271,28 +299,28 @@ int main()
 		{
 			kinect->UpdateBodyFrame(); //Update BodyFrame
 
-		   /* Left arm position */
-		   //LHand = kinect->TransKinectToRealWorld3D(kinect->joints[JointType_HandLeft].Position);
-		   LShould = kinect->TransKinectToRealWorld3D(kinect->joints[JointType_ShoulderLeft].Position);
-		   //LElbow = kinect->TransKinectToRealWorld3D(kinect->joints[JointType_ElbowLeft].Position); 
+			/* Left arm position */
+			//LHand = kinect->TransKinectToRealWorld3D(kinect->joints[JointType_HandLeft].Position);
+			LShould = kinect->TransKinectToRealWorld3D(kinect->joints[JointType_ShoulderLeft].Position);
+			//LElbow = kinect->TransKinectToRealWorld3D(kinect->joints[JointType_ElbowLeft].Position); 
 
-		   /* Right arm position */
-		   RHand = kinect->TransKinectToRealWorld3D(kinect->joints[JointType_HandRight].Position);
-		   RShould = kinect->TransKinectToRealWorld3D(kinect->joints[JointType_ShoulderRight].Position); 
-		   RElbow = kinect->TransKinectToRealWorld3D(kinect->joints[JointType_ElbowRight].Position); 
+			/* Right arm position */
+			RHand = kinect->TransKinectToRealWorld3D(kinect->joints[JointType_HandRight].Position);
+			RShould = kinect->TransKinectToRealWorld3D(kinect->joints[JointType_ShoulderRight].Position);
+			RElbow = kinect->TransKinectToRealWorld3D(kinect->joints[JointType_ElbowRight].Position);
 
-		   Body = kinect->TransKinectToRealWorld3D(kinect->joints[JointType_SpineBase].Position);
+			Body = kinect->TransKinectToRealWorld3D(kinect->joints[JointType_SpineBase].Position);
 
-		   // Write Log for Kinect Data
-		   KinectData_Body[kinect_counter] = Body;
-		   KinectData_LShould[kinect_counter] = LShould;
-		   KinectData_RShould[kinect_counter] = RShould;
-		   KinectData_RElbow[kinect_counter] = RElbow;
-		   KinectData_RHand[kinect_counter] = RHand;
-		   kinect_counter++;
-		   if (kinect_counter >= LOG_SIZE)
-			   kinect_counter = LOG_SIZE - 1;
-		   
+			// Write Log for Kinect Data
+			KinectData_Body[kinect_counter] = Body;
+			KinectData_LShould[kinect_counter] = LShould;
+			KinectData_RShould[kinect_counter] = RShould;
+			KinectData_RElbow[kinect_counter] = RElbow;
+			KinectData_RHand[kinect_counter] = RHand;
+			kinect_counter++;
+			if (kinect_counter >= LOG_SIZE)
+				kinect_counter = LOG_SIZE - 1;
+
 		}
 		else
 		{
@@ -302,11 +330,12 @@ int main()
 			RElbow = kinect->dataRElbow[cnt];
 			Body = kinect->dataBody[cnt];
 		}
-
-
+	
 		/* Evaluate Arm length just at the beginning */ 
-		double length_R = kinect->ArmLength(RShould, RElbow, RHand); 
-		Arm_Length = length_R; 
+		if(i < 300) {
+		//double length_L = kinect->ArmLength(LShould, LElbow, LHand); 
+			double length_R = kinect->ArmLength(RShould, RElbow, RHand); 
+			ARM = length_R;  }
 	 
 		if(BackP>60)
 		FTrackState = 0; 
@@ -314,6 +343,9 @@ int main()
 		FTrackState = 1; 
 
 		for(j=0; j<10; j++) {
+			/*Kalman->Prediction(SAMPLING_TIME*0.1);
+			Kalman->Update(FTrackState);
+			Kalman->State(FaceFilt); */
 			MAF2->Start(FTrackState, 0); 
 		    MAF2->Out(FaceFilt);        }
 
@@ -330,8 +362,8 @@ int main()
 		RShould.z = R_temp[2]; }
 
         /* Analize different branches of the RRT for the same detected body position */
-		/*for(j=0; j<20; j++) {
-			Output = kinect->TRRT(LShould, RShould, Body, Arm_Length, BodyValues); 
+		for(j=0; j<20; j++) {
+			Output = kinect->TRRT(LShould, RShould, Body, ARM, BodyValues); 
 		Array[j][0] = Output.x; 
 		Array[j][1] = Output.y; 
 		Array[j][2] = Output.z; 
@@ -343,26 +375,32 @@ int main()
 		Output.y = Array[k][1] ;//+ OFFSET_Y;
 		Output.z = Array[k][2];
 		Output.w = Array[k][3];
-		*/
+
+
 		//std::cout<<"Minimum in array "<<Output.x<<","<<Output.y<<","<<Output.z<<" Cost "<<Output.w<<std::endl;
 		double Elaps_ms = timeGetTime() - Start_t; 
 
-		//Filt[0] = Output.x;
-		//Filt[1] = Output.y;
+		/*Kalman->Prediction(Elaps_ms);
+		Kalman->Update(Output.x, Output.y); 
+		Kalman->State(Filt);*/
+
+		Filt[0] = Output.x;
+		Filt[1] = Output.y;
+
+
 		
 		/* Apply Moving Average Filter */
-		/*for(j=0; j<20; j++) {
+		for(j=0; j<20; j++) {
 			MAF->Start(Filt[0], Filt[1]); 
 			MAF->Out(Filt);                 
 		}
-		*/
+
 		//Elaps_ms = timeGetTime() - Start_t; 
 		//std::cout<<"Milliseconds = "<<Elaps_ms<<std::endl; 
 
-		//Delivery_Pos.x = Filt[0];
-		//Delivery_Pos.y = Filt[1];
+		Del_Pos.x = Filt[0];
+		Del_Pos.y = Filt[1];
 
-		/*
 		// 20200628 For GMM
 		if (use_GMM == true)
 		{
@@ -372,24 +410,25 @@ int main()
 			Worker_GMM.SetSampleData(pos);
 			Worker_GMM.EMAlgorithm();
 
-			Delivery_Pos.x = Worker_GMM.Model[1].mu(0);
-			Delivery_Pos.y = Worker_GMM.Model[1].mu(1);
+			Del_Pos.x = Worker_GMM.Model[1].mu(0);
+			Del_Pos.y = Worker_GMM.Model[1].mu(1);
 		}
-		*/
+
 
 		/* Show data */
-		if (i % 10 == 0){
+		if (i % 100 == 0){
 			//std::cout << "Left hand position x:" << LHand.x << ", y:" << LHand.y << ", z:" << LHand.z << std::endl;
 			//std::cout << "Right hand position x:" << RHand.x << ", y:" << RHand.y << ", z:" << RHand.z << std::endl;
 			//std::cout << "Left shoulder position x:" << LShould.x<<", y:" <<LShould.y <<", z:"<< LShould.z<< std::endl;
 			//std::cout << "Right shoulder position x:" << RShould.x<<", y:" <<RShould.y <<", z:"<< RShould.z<< std::endl;
-	        std::cout<<"Arm Lenght "<<Arm_Length<<std::endl;
+	        //std::cout<<"Arm Lenght "<<ARM<<std::endl;
 			//std::cout<<"Milliseconds = "<<Elaps_ms<<std::endl;
-			//std::cout<<"Delivery Position x:"<<Delivery_Pos.x<<" y:"<<Delivery_Pos.y<<std::endl; 
-			//std::cout<< "Total cost: "<<Output.w<<std::endl;
-			std::cout << "cnt: " << cnt << std::endl;
+			//std::cout<<"Delivery Position x:"<<Del_Pos.x<<" y:"<<Del_Pos.y<<std::endl; 
+			std::cout<< "Total cost: "<<Output.w<<std::endl;
+			std::cout << "Current Counter is: " << GetCounter() << "\n";
 			std::cout<<std::endl; 
 		}
+
 		
 		if(i == RSTART_TIMING) { std::cout<<"Planning Started"<<std::endl<<std::endl; } 
 
@@ -399,25 +438,21 @@ int main()
 			/* Robot starts moving */
 			//std::cout << "Robot Moving" << std::endl;
 			//Set the target position
-			//des_x(0) = Delivery_Pos.x;
-			//des_x(1) = Delivery_Pos.y;
-			des_x(0) = 0.0;
-			des_x(1) = 0.0;
+			des_x(0) = Del_Pos.x;
+			des_x(1) = Del_Pos.y;
 			des_x(2) = 0.0;
 			des_x(3) = 0.0;
 			mpc.setDestination(des_x);
 
 			//Check the convergence: don't stop the algorithm if destination is not reached
-			mpc.JointAngle2EndPosition(end_pos, cur_x.block<2, 1>(0, 0));  
-			// Block command: cur_x.block<2, 1>(0, 0): Start from (0,0) of the matrix cur_x and take <2,1> elements i.e. 2 rows 1 column
-			mpc.JointVel2EndVel(end_vel, cur_x.block<2, 1>(0, 0), cur_x.block<2, 1>(2, 0));
-
-			// Check the Termination conditions
-			if ((fabs(Body.x - end_pos(0)) < distance_for_termination) && (fabs(Body.y - end_pos(1)) < distance_for_termination)
+			mpc.JointAngle2EndPosition(end_pos, cur_x.block<2, 1>(0, 0));		// end_pos is end effector position (m) right now. Found from cur_x(joint angles)
+			mpc.JointVel2EndVel(end_vel, cur_x.block<2, 1>(0, 0), cur_x.block<2, 1>(2, 0)); // end_vel is end effector velocity (m/s) right now. Found from cur_x (joint velocities)
+			if ((fabs(des_x(0) - end_pos(0)) < distance_for_termination) && (fabs(des_x(1) - end_pos(1)) < distance_for_termination)
 				&& (fabs(des_x(2) - end_vel(0)) < velocity_for_termination) && (fabs(des_x(3) - end_vel(1)) < velocity_for_termination))
 			{ 
 				desTime = -1;
 				std::cout<<"Task completed"<<std::endl; 
+				std::cout << "Trajectory was calculated in: " << GetCounter() << "ms\n";
 				std::cout<<"Extra time (s): "<<(outTime*SAMPLING_TIME*0.001 - 0.15)<<std::endl<<std::endl; 
 			}
 			else
@@ -431,9 +466,9 @@ int main()
 			}
 
 			//Generate the trajectory by model predictive control
-			if (mpc.calcInputbyGradientMethod(input, cur_x, desTime, SAMPLING_TIME * 0.001, LShould, RShould, Body, Arm_Length, BodyValues))
+			if (mpc.calcInputbyGradientMethod(input, cur_x, desTime, SAMPLING_TIME * 0.001, BodyValues))
 			{
-				mpc.calcStateFunc(f, cur_x, input);			// f is system state X = [x,y,x_dot,y_dot] 
+				mpc.calcStateFunc(f, cur_x, input);
 				cur_x = cur_x + f * SAMPLING_TIME * 0.001;      
 			}
 			else
@@ -485,6 +520,7 @@ int main()
 	delete kinect;
 	delete MAF;
 	delete MAF2; 
+	delete Kalman; 
 	mpc.~MPC();
 	
 	std::cout<<"Destroyed"<<std::endl; 

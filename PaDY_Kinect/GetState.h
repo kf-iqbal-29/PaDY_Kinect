@@ -80,7 +80,7 @@ public:
 	pos3d_t TransQuaterToEuler(Vector4 Quater);//Transform Quaternion to Euler angle
 	pos3d_t TransKinectToRealWorld3D(CameraSpacePoint Pos);//Transform Kinect cordinate to Real world coordinate
 
-	//pos2d_t BodyToScreen(CameraSpacePoint bodyPoint, int width, int height);  // Trabsforms kinect coordinates to a Color image point
+	pos2d_t BodyToScreen(CameraSpacePoint bodyPoint, int width, int height);  // Trabsforms kinect coordinates to a Color image point
 
 	double Distance (pos3d_t joint_1, pos3d_t joint_2); 
 	double ArmLength (pos3d_t Shoulder, pos3d_t Elbow, pos3d_t Hand); 

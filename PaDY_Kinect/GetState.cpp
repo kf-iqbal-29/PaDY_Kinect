@@ -29,7 +29,7 @@ GetState::~GetState()
 	/*
 	//Release all objects
 	for (int i = 0; i < BODY_COUNT; i++){
-		Bodies[i]->Release();
+	Bodies[i]->Release();
 	}
 
 	BodyFrameReader->Release();
@@ -39,7 +39,7 @@ GetState::~GetState()
 
 	//Close Kinect
 	if (Kinect){
-		Kinect->Close();
+	Kinect->Close();
 	}
 	Kinect->Release();
 	*/
@@ -51,7 +51,7 @@ int GetState::Initialize()
 {
 	HRESULT hr;
 	ReadSampleData();
-	
+
 	//Get a default Kinect data
 	hr = GetDefaultKinectSensor(&Kinect);
 	if (FAILED(hr)){
@@ -88,7 +88,7 @@ int GetState::Initialize()
 		getchar();
 		return -1;
 	}
-	
+
 	return 1;
 }
 
@@ -136,6 +136,8 @@ void GetState::UpdateBodyFrame()
 	}
 }
 
+
+
 pos3d_t GetState::TransKinectToRealWorld3D(CameraSpacePoint Pos)
 {
 	pos3d_t TransedPos;
@@ -143,9 +145,9 @@ pos3d_t GetState::TransKinectToRealWorld3D(CameraSpacePoint Pos)
 	TransedPos.y = Pos.X;
 	TransedPos.z = Pos.Y;
 
-	//TransedPos.x = -Pos.Z;
-	//TransedPos.y = -Pos.X;
-	//TransedPos.z = Pos.Y;
+	/* TransedPos.x = -Pos.Z;
+	TransedPos.y = -Pos.X;
+	TransedPos.z = Pos.Y; */
 
 	return TransedPos;
 }
@@ -243,28 +245,27 @@ void GetState::UpSideVision(pos3d_t SpineBase, pos3d_t ShouldLeft, pos3d_t Shoul
 	cv::circle(plane, cv::Point(SpineBase.y*100+width/2, SpineBase.x*100), body, cv::Scalar(255,255,255), 1, 8, 0); 
 	cv::circle(plane, cv::Point(ShouldLeft.y*100+width/2, ShouldLeft.x*100), hand, cv::Scalar(0,0,255), 1, 8, 0); 
 	cv::circle(plane, cv::Point(ShouldRight.y*100+width/2, ShouldRight.x*100), hand, cv::Scalar(0,0,255), 1, 8, 0);
-	//std::cout << "SpinBase : " << cv::Point(SpineBase.y * 100 + width / 2, SpineBase.x * 100) << std::endl;
+	
 	// Orientation of the body wrt Camera RF evaluated from the position of the shoulders (components of the vector normal to shoulders line) 
 	orient.x = (ShouldLeft.y - ShouldRight.y);                         
 	orient.y = -(ShouldLeft.x - ShouldRight.x); 
 
 	cv::circle(plane, cv::Point(EE.y*100+width/2, EE.x*100), hand, cv::Scalar(255, 0, 255), 1, 8, 0); 
 	//cv::circle(plane, cv::Point(EE_noF_y*100+width/2, EE_noF_x*100), hand, cv::Scalar(255, 0, 0), 1, 8, 0); 
-	//std::cout << "EE : " << cv::Point(EE.y * 100 + width / 2, EE.x * 100) << std::endl;
 
 	cv::circle(plane, cv::Point(EndPoint.y*100 + width / 2, EndPoint.x * 100), hand, cv::Scalar(255, 255, 0), 1, 8, 0);
 	cv::circle(plane, cv::Point(FirstLink.y*100 + width / 2, FirstLink.x * 100), hand, cv::Scalar(255, 255, 0), 1, 8, 0);
 	cv::line(plane, cv::Point(FirstLink.y*100 + width / 2, FirstLink.x * 100), cv::Point(EndPoint.y*100 + width / 2, EndPoint.x * 100), cv::Scalar(255, 255, 0), 1, 8, 0); 
 	cv::line(plane, cv::Point(FirstLink.y*100 + width / 2, FirstLink.x * 100), cv::Point(0 + width / 2, 0), cv::Scalar(255, 255, 0), 1, 8, 0); 
 
-	cv::arrowedLine(plane, cv::Point(SpineBase.y*100+width/2, SpineBase.x*100), cv::Point(SpineBase.y*100+width/2 + orient.y*100, SpineBase.x*100+orient.x*100), cv::Scalar(255,255,255),1,8,0,0.1);    
+	//cv::arrowedLine(plane, cv::Point(SpineBase.y*100+width/2, SpineBase.x*100), cv::Point(SpineBase.y*100+width/2 + orient.y*100, SpineBase.x*100+orient.x*100), cv::Scalar(255,255,255),1,8,0,0.1);    
 
 	cv::imshow("XY plane", plane);
 
 	return; 
 }
 
-/*
+
 pos2d_t GetState::BodyToScreen(CameraSpacePoint bodyPoint, int width, int height)
 {
     // Calculate the body's position on the screen
@@ -279,7 +280,6 @@ pos2d_t GetState::BodyToScreen(CameraSpacePoint bodyPoint, int width, int height
 	
 	return coord; 
 }
-*/
 
 void GetState::SwapShoulder(pos3d_t LShould, pos3d_t RShould, double* Left, double* Right) {
 
@@ -360,7 +360,7 @@ void GetState::ReadSampleData() {
 		//stringstreamを以下の２行のコードでクリアする
 		ss.str("");
 		ss.clear(std::stringstream::goodbit);
-		
+
 		//1列読み込み
 		getline(ifs.seekg(0, std::ios_base::cur), str, ',');
 		//stringstreamに読みだしたstringを流す

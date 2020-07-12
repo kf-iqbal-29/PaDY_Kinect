@@ -1,3 +1,57 @@
-﻿C:\Program Files (x86)\MSBuild\Microsoft.Cpp\v4.0\V140\Microsoft.CppBuild.targets(392,5): warning MSB8028: The intermediate directory (x64\Release\) contains files shared from another project (Kinect_silviasan.vcxproj).  This can lead to incorrect clean and rebuild behavior.
-  PaDY_Kinect.vcxproj -> C:\Users\金澤亮\Desktop\PaDY_Kinect\x64\Release\PaDY_Kinect.exe
-  PaDY_Kinect.vcxproj -> C:\Users\金澤亮\Desktop\PaDY_Kinect\x64\Release\PaDY_Kinect.pdb (Full PDB)
+﻿C:\Program Files (x86)\MSBuild\Microsoft.Cpp\v4.0\V140\Microsoft.CppBuild.targets(392,5): warning MSB8028: The intermediate directory (x64\Release\) contains files shared from another project (Kinect_silviasan.vcxproj, PaDY_Kinect_20200703.vcxproj).  This can lead to incorrect clean and rebuild behavior.
+  CostFunctions.cpp
+C:\Program Files\opencv\build\include\opencv2/core/mat.hpp(1965): warning C4819: The file contains a character that cannot be represented in the current code page (932). Save the file in Unicode format to prevent data loss
+C:\Program Files\opencv\build\include\opencv2/core/persistence.hpp : warning C4819: The file contains a character that cannot be represented in the current code page (932). Save the file in Unicode format to prevent data loss
+C:\Program Files\opencv\build\include\opencv2/core/utility.hpp : warning C4819: The file contains a character that cannot be represented in the current code page (932). Save the file in Unicode format to prevent data loss
+C:\Program Files\opencv\build\include\opencv2/core/utility.hpp : warning C4819: The file contains a character that cannot be represented in the current code page (932). Save the file in Unicode format to prevent data loss
+CostFunctions.cpp(63): warning C4101: 'cost_3': unreferenced local variable
+CostFunctions.cpp(246): warning C4244: '=': conversion from 'double' to 'int', possible loss of data
+CostFunctions.cpp(247): warning C4244: '=': conversion from 'double' to 'int', possible loss of data
+CostFunctions.cpp(265): warning C4101: 'cost_3': unreferenced local variable
+CostFunctions.cpp(445): warning C4244: '=': conversion from 'double' to 'int', possible loss of data
+CostFunctions.cpp(446): warning C4244: '=': conversion from 'double' to 'int', possible loss of data
+CostFunctions.cpp(498): warning C4244: 'initializing': conversion from 'double' to 'int', possible loss of data
+CostFunctions.cpp(536): warning C4244: '=': conversion from 'double' to 'int', possible loss of data
+  GetState.cpp
+C:\Program Files\opencv\build\include\opencv2/core/mat.hpp(1965): warning C4819: The file contains a character that cannot be represented in the current code page (932). Save the file in Unicode format to prevent data loss
+C:\Program Files\opencv\build\include\opencv2/core/persistence.hpp : warning C4819: The file contains a character that cannot be represented in the current code page (932). Save the file in Unicode format to prevent data loss
+C:\Program Files\opencv\build\include\opencv2/core/utility.hpp : warning C4819: The file contains a character that cannot be represented in the current code page (932). Save the file in Unicode format to prevent data loss
+C:\Program Files\opencv\build\include\opencv2/core/utility.hpp : warning C4819: The file contains a character that cannot be represented in the current code page (932). Save the file in Unicode format to prevent data loss
+GetState.cpp(221): warning C4244: 'argument': conversion from 'double' to 'int', possible loss of data
+GetState.cpp(222): warning C4244: 'argument': conversion from 'double' to 'int', possible loss of data
+GetState.cpp(224): warning C4244: 'argument': conversion from 'double' to 'int', possible loss of data
+GetState.cpp(225): warning C4244: 'argument': conversion from 'double' to 'int', possible loss of data
+GetState.cpp(226): warning C4244: 'argument': conversion from 'double' to 'int', possible loss of data
+GetState.cpp(245): warning C4244: 'argument': conversion from 'double' to 'int', possible loss of data
+GetState.cpp(246): warning C4244: 'argument': conversion from 'double' to 'int', possible loss of data
+GetState.cpp(247): warning C4244: 'argument': conversion from 'double' to 'int', possible loss of data
+GetState.cpp(253): warning C4244: 'argument': conversion from 'double' to 'int', possible loss of data
+GetState.cpp(256): warning C4244: 'argument': conversion from 'double' to 'int', possible loss of data
+GetState.cpp(257): warning C4244: 'argument': conversion from 'double' to 'int', possible loss of data
+GetState.cpp(258): warning C4244: 'argument': conversion from 'double' to 'int', possible loss of data
+GetState.cpp(259): warning C4244: 'argument': conversion from 'double' to 'int', possible loss of data
+GetState.cpp(276): warning C4101: 'coordY': unreferenced local variable
+GetState.cpp(276): warning C4101: 'coordX': unreferenced local variable
+GetState.cpp(314): warning C4244: '=': conversion from 'double' to 'int', possible loss of data
+GetState.cpp(319): warning C4244: '=': conversion from 'double' to 'int', possible loss of data
+  GMM.cpp
+  main.cpp
+C:\Program Files\opencv\build\include\opencv2/core/mat.hpp(1965): warning C4819: The file contains a character that cannot be represented in the current code page (932). Save the file in Unicode format to prevent data loss
+C:\Program Files\opencv\build\include\opencv2/core/persistence.hpp : warning C4819: The file contains a character that cannot be represented in the current code page (932). Save the file in Unicode format to prevent data loss
+C:\Program Files\opencv\build\include\opencv2/core/utility.hpp : warning C4819: The file contains a character that cannot be represented in the current code page (932). Save the file in Unicode format to prevent data loss
+C:\Program Files\opencv\build\include\opencv2/core/utility.hpp : warning C4819: The file contains a character that cannot be represented in the current code page (932). Save the file in Unicode format to prevent data loss
+main.cpp(373): warning C4244: 'initializing': conversion from 'double' to 'int', possible loss of data
+main.cpp(259): warning C4101: 'LHand': unreferenced local variable
+main.cpp(259): warning C4101: 'LElbow': unreferenced local variable
+main.cpp(253): warning C4101: 'faces': unreferenced local variable
+  MPC.cpp
+C:\Program Files\opencv\build\include\opencv2/core/mat.hpp(1965): warning C4819: The file contains a character that cannot be represented in the current code page (932). Save the file in Unicode format to prevent data loss
+C:\Program Files\opencv\build\include\opencv2/core/persistence.hpp : warning C4819: The file contains a character that cannot be represented in the current code page (932). Save the file in Unicode format to prevent data loss
+C:\Program Files\opencv\build\include\opencv2/core/utility.hpp : warning C4819: The file contains a character that cannot be represented in the current code page (932). Save the file in Unicode format to prevent data loss
+C:\Program Files\opencv\build\include\opencv2/core/utility.hpp : warning C4819: The file contains a character that cannot be represented in the current code page (932). Save the file in Unicode format to prevent data loss
+  StdCalculationLib.cpp
+  Generating code
+  All 3353 functions were compiled because no usable IPDB/IOBJ from previous compilation was found.
+  Finished generating code
+  PaDY_Kinect.vcxproj -> C:\Users\金澤亮\Documents\GitHub\PaDY_Kinect\x64\Release\PaDY_Kinect.exe
+  PaDY_Kinect.vcxproj -> C:\Users\金澤亮\Documents\GitHub\PaDY_Kinect\x64\Release\PaDY_Kinect.pdb (Full PDB)
