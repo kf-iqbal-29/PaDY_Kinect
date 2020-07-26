@@ -97,15 +97,16 @@ public:
     
 	pos4d_t InvKineArmR(pos3d_t EndEff_S, pos3d_t Should, double Arm, double phi); 
 	pos4d_t InvKineArmL(pos3d_t EndEff_S, pos3d_t Should, double Arm, double phi);
+	pos4d_t JointDispL (pos4d_t Joint_value, pos4d_t Max, pos4d_t Min);
 
 	pos4d_t JointDispR (pos4d_t Joint_value, pos4d_t Max, pos4d_t Min); 
-	pos4d_t JointDispL (pos4d_t Joint_value, pos4d_t Max, pos4d_t Min);
 
 	pos4d_t TRRT(pos3d_t LShould, pos3d_t RShould, pos3d_t Body, double length_arm, double* Bangle);
 	int TransitionTest(double Cost_i, double Cost_j, double delta, int T);
 	void SwapShoulder(pos3d_t LShould, pos3d_t RShould, double* Left, double* Right);
 
 	void ReadSampleData();//add 20200705
+	pos3d_t GetState::TransLogToRealWorld3D(pos3d Pos);
 
 	pos3d_t dataBody[SEQ_LENGTH];
 	pos3d_t dataLShoulder[SEQ_LENGTH];

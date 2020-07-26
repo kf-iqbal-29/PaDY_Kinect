@@ -6,6 +6,7 @@
 #include<fstream>
 #include<string>
 #include <Kinect.Face.h>
+#include<math.h>
 
 BOOLEAN BodyisTracked; 
 
@@ -139,6 +140,7 @@ void GetState::UpdateBodyFrame()
 pos3d_t GetState::TransKinectToRealWorld3D(CameraSpacePoint Pos)
 {
 	pos3d_t TransedPos;
+	
 	TransedPos.x = Pos.Z;
 	TransedPos.y = Pos.X;
 	TransedPos.z = Pos.Y;
@@ -149,6 +151,17 @@ pos3d_t GetState::TransKinectToRealWorld3D(CameraSpacePoint Pos)
 
 	return TransedPos;
 }
+
+pos3d_t GetState::TransLogToRealWorld3D(pos3d Pos)
+{
+	pos3d_t TransedPos;
+	TransedPos.x = Pos.x;
+	TransedPos.y = Pos.y;
+	TransedPos.z = Pos.z;
+
+	return TransedPos;
+}
+
 
 //Transform quaternion to Euler angle
 pos3d_t GetState::TransQuaterToEuler(Vector4 Quater)
@@ -501,7 +514,7 @@ void GetState::ReadSampleData() {
 		ss.str("");
 		ss.clear(std::stringstream::goodbit);
 
-		std::cout << "current sample : " << i << std::endl;
+		//std::cout << "current sample : " << i << std::endl;
 
 	}
 	//CSVファイルを閉じてファイルへのアクセス権を開放

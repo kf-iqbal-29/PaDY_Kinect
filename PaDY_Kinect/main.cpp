@@ -20,8 +20,8 @@
 #define OFFSET_Y 0.5       //(m)
 #define LOG_SIZE 100000
 
-#define distance_for_termination 0.2  // The distance between end-effector and worker body that would fulfill the termination condition
-#define velocity_for_termination 0.05 // The velocity difference between end-effector velocity and desired velocity that would fulfill the termination condition
+#define distance_for_termination 0.35  // The distance between end-effector and worker body that would fulfill the termination condition
+#define velocity_for_termination 0.1 // The velocity difference between end-effector velocity and desired velocity that would fulfill the termination condition
 
 GetState* kinect;//Object for Kinect and linear filter
 Linear* MAF;	// MAF = Moving Average Filter
@@ -32,7 +32,7 @@ unsigned long Start_t, End_t;
 double Arm_Length; 
 pos2d_t FirstLink; 
 pos3d_t Delivery_Pos;
-pos3d_t RShould, LShould, LHand, RHand, LElbow, RElbow, Body; ;
+pos3d_t RShould, LShould, LHand, RHand, LElbow, RElbow, Body; 
 pos3d_t End_Pos;
 pos4d_t Output;
 
@@ -203,9 +203,40 @@ void GetState::UpdateColorFrame()
 	}
 }
 
+// For Timer 
+double PCFreq = 0.0;
+__int64 CounterStart = 0;
+
+void StartCounter()
+{
+	LARGE_INTEGER li;
+	if (!QueryPerformanceFrequency(&li))
+		std::cout << "QueryPerformanceFrequency failed!\n";
+
+	PCFreq = double(li.QuadPart) / 1000.0;
+
+	QueryPerformanceCounter(&li);
+	CounterStart = li.QuadPart;
+}
+double GetCounter()
+{
+	LARGE_INTEGER li;
+	QueryPerformanceCounter(&li);
+	return double(li.QuadPart - CounterStart) / PCFreq;
+}
+void logCalcTime(double total_time)
+{
+	//Open the csv file
+	std::ofstream ofs("CalculationTimeLogData.txt");
+	ofs << total_time << std::endl;
+	ofs.close();
+	std::cout << "Calculation Time Stored in File." << std::endl;
+}
 
 int main()
 {
+	StartCounter();
+
 	bool useKinect = false; // do you want to use Kinect in real time? or do you want to use Kinect Log Data?
 	int j, i = 0;
 	int cnt = 0;
@@ -296,11 +327,11 @@ int main()
 		}
 		else
 		{
-			LShould = kinect->dataLShoulder[cnt];
-			RHand = kinect->dataRHand[cnt];
-			RShould = kinect->dataRShoulder[cnt];
-			RElbow = kinect->dataRElbow[cnt];
-			Body = kinect->dataBody[cnt];
+			LShould = kinect->TransLogToRealWorld3D(kinect->dataLShoulder[cnt]);
+			RHand = kinect->TransLogToRealWorld3D(kinect->dataRHand[cnt]);
+			RShould = kinect->TransLogToRealWorld3D(kinect->dataRShoulder[cnt]);
+			RElbow = kinect->TransLogToRealWorld3D(kinect->dataRElbow[cnt]);
+			Body = kinect->TransLogToRealWorld3D(kinect->dataBody[cnt]);
 		}
 
 
@@ -328,6 +359,15 @@ int main()
 		RShould.x = R_temp[0];
 		RShould.y = R_temp[1];
 		RShould.z = R_temp[2]; }
+
+		// Orientation of the body in real world
+		pos2d_t orient;
+		orient.y = (LShould.y - RShould.y);
+		orient.x = (LShould.x - RShould.x);
+		double Bangle = atan2(-(orient.x), (orient.y));
+		BodyValues[0] = Bangle;
+		BodyValues[1] = Body.x;
+		BodyValues[2] = Body.y;
 
         /* Analize different branches of the RRT for the same detected body position */
 		/*for(j=0; j<20; j++) {
@@ -378,23 +418,34 @@ int main()
 		*/
 
 		/* Show data */
-		if (i % 10 == 0){
+		if (i % 100 == 0){
 			//std::cout << "Left hand position x:" << LHand.x << ", y:" << LHand.y << ", z:" << LHand.z << std::endl;
 			//std::cout << "Right hand position x:" << RHand.x << ", y:" << RHand.y << ", z:" << RHand.z << std::endl;
 			//std::cout << "Left shoulder position x:" << LShould.x<<", y:" <<LShould.y <<", z:"<< LShould.z<< std::endl;
 			//std::cout << "Right shoulder position x:" << RShould.x<<", y:" <<RShould.y <<", z:"<< RShould.z<< std::endl;
-	        std::cout<<"Arm Lenght "<<Arm_Length<<std::endl;
+	        //std::cout<<"Arm Lenght "<<Arm_Length<<std::endl;
 			//std::cout<<"Milliseconds = "<<Elaps_ms<<std::endl;
 			//std::cout<<"Delivery Position x:"<<Delivery_Pos.x<<" y:"<<Delivery_Pos.y<<std::endl; 
 			//std::cout<< "Total cost: "<<Output.w<<std::endl;
-			std::cout << "cnt: " << cnt << std::endl;
+			//std::cout << "cnt: " << cnt << std::endl;
+			std::cout << "Current Counter is: " << GetCounter() << "\n";
+			//std::cout << "Termination Condition is: " << std::endl;
+			//std::cout << "Distance 1: " << fabs(Body.x - end_pos(0)) - distance_for_termination << std::endl; 
+			//std::cout << "Distance 2: " << fabs(Body.y - end_pos(1)) - distance_for_termination << std::endl;
+			//std::cout << "Velocity 1: " << fabs(des_x(2) - end_vel(0)) - velocity_for_termination << std::endl;
+			//std::cout << "Velocity 2: " << fabs(des_x(3) - end_vel(1)) - velocity_for_termination << std::endl;
 			std::cout<<std::endl; 
 		}
 		
-		if(i == RSTART_TIMING) { std::cout<<"Planning Started"<<std::endl<<std::endl; } 
+		if(i == RSTART_TIMING) 
+		{ 
+			std::cout<<"Planning Started"<<std::endl<<std::endl;
+			std::cout << "Current Counter is: " << GetCounter() << "\n\n";
+		} 
 
 		/****** Trajectory planning part  ******/
-		if ((i > RSTART_TIMING) && (desTime > 0)){
+		if ((i > RSTART_TIMING) && (desTime > 0))
+		{
 
 			/* Robot starts moving */
 			//std::cout << "Robot Moving" << std::endl;
@@ -418,6 +469,10 @@ int main()
 			{ 
 				desTime = -1;
 				std::cout<<"Task completed"<<std::endl; 
+				double total_time = GetCounter();
+				logCalcTime(total_time);
+				std::cout << "Trajectory was calculated in: " << GetCounter() << "ms\n";
+				
 				std::cout<<"Extra time (s): "<<(outTime*SAMPLING_TIME*0.001 - 0.15)<<std::endl<<std::endl; 
 			}
 			else
@@ -479,6 +534,7 @@ int main()
 		cnt++;
 		if (cnt >= kinect->SEQ_LENGTH) cnt = kinect->SEQ_LENGTH - 1;
 		Sleep(SAMPLING_TIME);
+
 	}
 
 	//Delete the object for Kinect
@@ -495,6 +551,8 @@ int main()
 	if (useKinect)
 		WriteKinectLog();
 
+	std::cout << "Press any key to continue..." << std::endl;
+	_getch();
 	return 0;	
 }
 

@@ -374,7 +374,7 @@ void MPC::calcGradient(Eigen::VectorXd& F, Eigen::VectorXd& x, const Eigen::Vect
 //Calculate the the total cost function J = Phi(xN) + sumB(x)
 double MPC::calcObjective(const Eigen::VectorXd& x_seq, const Eigen::VectorXd& u_seq, const int N, pos3d_t LShould, pos3d_t RShould, pos3d_t Body, double length_arm, double* BodyValues)
 {
-	double Phi, B, V, S, A;
+	double Phi, B, V, S, A_R,A_L,A;
 	Eigen::Matrix<double, STATE_DIM / 2, 1> end_pos;
 	pos3d_t EndEff;
 
@@ -394,15 +394,19 @@ double MPC::calcObjective(const Eigen::VectorXd& x_seq, const Eigen::VectorXd& u
 	for (int i = 0; i < N; ++i){
 		S += calcSafeCost(x_seq.block<2, 1>((STATE_DIM * i), 0), BodyValues);
 	}
+	A_R = 0;
+	A_L = 0;
 	A = 0;
 	for (int i = 0; i < N; ++i) {
 		JointAngle2EndPosition(end_pos, x_seq.block<2, 1>((STATE_DIM * i), 0));
 		EndEff.x = end_pos(0);
 		EndEff.y = end_pos(1);
 		EndEff.z = 0;
-		A += calcArmComfortR(RShould, length_arm, BodyValues[0], EndEff);
+		A_R += calcArmComfortR(RShould, length_arm, BodyValues[0], EndEff);
+		A_L += calcArmComfortL(LShould, length_arm, BodyValues[0], EndEff);
 	}
 
+	A = calcArmComfort(A_L, A_R);
 	//Dealing with the infinite value
 	if(!_finite(B))
 		B = DBL_MAX;
@@ -414,7 +418,7 @@ double MPC::calcObjective(const Eigen::VectorXd& x_seq, const Eigen::VectorXd& u
 
 	//std::cout<<"Phi "<<Phi<<" vs Safe "<<S<<std::endl; 
 
-	return (Phi + B + V + S);
+	return (Phi + B + V + S + A);
 }
 
 
@@ -509,7 +513,7 @@ double MPC::calcObjectiveB(const Eigen::Matrix<double, STATE_DIM, 1>& cur_x, con
 //Calculate the Hamiltonian function
 double MPC::calcHamiltonian(const Eigen::Matrix<double, STATE_DIM, 1>& cur_x, const Eigen::Matrix<double, INPUT_DOF, 1>& cur_u, const Eigen::Matrix<double, STATE_DIM, 1>& cur_lmd, pos3d_t LShould, pos3d_t RShould, pos3d_t Body, double length_arm, double* BodyValues, const int N)
 {
-	double objB, objV, objS, objA;
+	double objB, objV, objS, objA_L, objA_R, objA;
 	Eigen::Matrix<double, 1, 1> objF;
 	Eigen::Matrix<double, STATE_DIM, 1> f;
 	Eigen::Matrix<double, STATE_DIM/2, 1> end_pos;
@@ -530,7 +534,9 @@ double MPC::calcHamiltonian(const Eigen::Matrix<double, STATE_DIM, 1>& cur_x, co
 	EndEff.x = end_pos(0);
 	EndEff.y = end_pos(1);
 	EndEff.z = 0;
-	objA = calcArmComfortR(RShould, length_arm, BodyValues[0], EndEff);
+	objA_R = calcArmComfortR(RShould, length_arm, BodyValues[0], EndEff);
+	objA_L = calcArmComfortL(LShould, length_arm, BodyValues[0], EndEff);
+	objA = calcArmComfort(objA_L, objA_R);
 
 	//Calculate the State equation
 	calcStateFunc(f, cur_x, cur_u);
@@ -676,6 +682,63 @@ double MPC::calcArmComfortR(pos3d_t ShouldR, double Arm, double Bangle, pos3d_t 
 
 }
 
+double MPC::calcArmComfortL(pos3d_t ShouldPos, double Arm, double Bangle, pos3d_t EndEff) {
+
+	pos4d_t Q, dist_l;
+	double r_q = pow(Arm, 2) - pow((ShouldPos.z - EndEff.z), 2);
+	double r_m = 0.1*0.1;
+	double r_M = 0.7*0.7;
+	double cost_1, cost_2, cost_3;
+
+	// To compute the semicircle of reachability EndEffector Position must be rototraslated in ShoulderRF  (EE_S = R*(EE_W) - R*(Should_W)) on EE plane
+
+	if (Bangle < 0) { Bangle = -(Bangle + 2 * M_PI - M_PI / 2); }
+	else { Bangle = -(Bangle - M_PI / 2); }// Angle of rotation around z axis negative (CCW but inverse)
+
+										   // double Rot[4][4] = {// From RealWorld to ShoulderRF with negative angle
+										   //	{cos(Bangle), -sin(Bangle), 0, ShouldPos.x},
+										   //	{sin(Bangle), cos(Bangle), 0, ShouldPos.y},
+										   //	{0, 0, 0, EndEff.z},
+										   //	{0, 0, 0, 1} };
+
+	pos3d_t EE_S_t, EE_SL;
+	EE_S_t.x = EndEff.x - ShouldPos.x;
+	EE_S_t.y = EndEff.y - ShouldPos.y;
+
+	EE_SL.x = EE_S_t.x*cos(Bangle) - EE_S_t.y*sin(Bangle);
+	EE_SL.y = EE_S_t.x*sin(Bangle) + EE_S_t.y*cos(Bangle);
+	EE_SL.z = EndEff.z - ShouldPos.z;
+
+
+	// Define Joint ranges:  range_1 = [-100 90]*deg  range_2 = [0,90]*deg range_3 = [-180 90]*deg range_4 = [0 135]*deg; 
+	Min_L.x = -100 * DEG2RAD;
+	Min_L.y = 0;
+	Min_L.z = -M_PI;
+	Min_L.w = 0;
+	Max_L.x = M_PI / 2;
+	Max_L.y = M_PI / 2;
+	Max_L.z = M_PI / 2;
+	Max_L.w = 3 * M_PI / 4;
+
+	if ((EE_SL.y < -0.1) && (EE_SL.y*EE_SL.y + EE_SL.x*EE_SL.x <= r_q) && (EE_SL.y*EE_SL.y + EE_SL.x*EE_SL.x >= r_m) && (EE_SL.x >= -Arm / 2)) {             // Reachability set
+		double phi = M_PI / 6;                                                                      // Choose 3 fixed swivel angles
+		Q = InvKineArmL(EE_SL, ShouldPos, Arm, phi);
+		dist_l = JointDispL(Q, Max_L, Min_L);
+		cost_1 = dist_l.x + dist_l.y + dist_l.z + dist_l.w;
+
+		phi = M_PI / 3;
+		Q = InvKineArmL(EE_SL, ShouldPos, Arm, phi);
+		dist_l = JointDispL(Q, Max_L, Min_L);
+		cost_2 = dist_l.x + dist_l.y + dist_l.z + dist_l.w;
+		return std::min(cost_1, cost_2);
+	}
+	else if ((EE_SL.y < 0) && (EE_SL.y*EE_SL.y + EE_SL.x*EE_SL.x <= r_M)) {
+		return 5.0;
+	}
+	else {
+		return 7.0;
+	}
+}
 
 pos4d_t MPC::InvKineArmR(pos3d_t EndEff_SR, pos3d_t ShouldR, double Arm, double phi) {
 
@@ -757,6 +820,88 @@ pos4d_t MPC::InvKineArmR(pos3d_t EndEff_SR, pos3d_t ShouldR, double Arm, double 
 
 }
 
+pos4d_t MPC::InvKineArmL(pos3d_t EndEff_S, pos3d_t Should, double Arm, double phi) {
+
+	pos3d_t n, u, v;
+	pos3d_t Pc, Pe, Pw;
+	double armL1 = Arm / 2;
+	double armL2 = Arm / 2 + 0.05;
+	double armL3 = sqrt(EndEff_S.x*EndEff_S.x + EndEff_S.y*EndEff_S.y + EndEff_S.z*EndEff_S.z);
+	Pw = EndEff_S;
+	//std::cout<<"Left RF "<<Pw.x<<","<<Pw.y<<","<<Pw.z<<std::endl; 
+
+	// unit vector to the EE position in the Shoulder RF
+	n.x = EndEff_S.x / armL3;
+	n.y = EndEff_S.y / armL3;
+	n.z = EndEff_S.z / armL3;
+
+	double cos_alfa = (armL3*armL3 + armL1*armL1 - armL2*armL2) / (2 * armL3*armL1);
+
+	Pc.x = armL1*cos_alfa*n.x;
+	Pc.y = armL1*cos_alfa*n.y;
+	Pc.z = armL1*cos_alfa*n.z;
+
+	double R = armL1*sin(acos(cos_alfa));
+
+	// unit vector projection of -z axis (Shoulder RF) in the plane orthogonal to n
+	u.x = n.x*n.z;
+	u.y = n.y*n.z;
+	u.z = n.z*n.z - 1;
+	double mag = sqrt(u.x*u.x + u.y*u.y + u.z*u.z);
+	u.x = u.x / mag;
+	u.y = u.y / mag;
+	u.z = u.z / mag;
+
+	// unit vector given by the cross product: (n x v)
+	v.x = n.y*u.z - n.z*u.y;
+	v.y = n.z*u.x - n.x*u.z;
+	v.z = n.x*u.y - n.y*u.x;
+
+	// Impose position of the Elbow through Phi angle
+	Pe.x = Pc.x + R*cos(phi)*u.x + R*sin(phi)*v.x;
+	Pe.y = Pc.y + R*cos(phi)*u.y + R*sin(phi)*v.y;
+	Pe.z = Pc.z + R*cos(phi)*u.z + R*sin(phi)*v.z;
+	//std::cout<<"Pe:"<<Pe.x<<","<<Pe.y<<","<<Pe.z<<std::endl; 
+
+	// Find analitically Joint angles
+	double teta_1, teta_2, teta_3, teta_4;
+	double C, S;
+
+	teta_2 = asin(-Pe.z / armL1);
+	teta_1 = atan2(Pe.y / cos(teta_2), Pe.x / cos(teta_2));
+
+	C = (cos(teta_2)*(Pw.x*cos(teta_1) + Pw.y*sin(teta_1)) - Pw.z*sin(teta_2) - armL1) / armL2;
+	S = sqrt(1 - C*C);
+	teta_4 = atan2(S, C);
+
+	S = (sin(teta_2)*(Pw.x*cos(teta_1) + Pw.y*sin(teta_1)) + Pw.z*cos(teta_2)) / (armL2*sin(teta_4));
+	C = (Pw.x*sin(teta_1) - Pw.y*cos(teta_1)) / (-armL2*sin(teta_4));
+	if (S <= 0) { teta_3 = atan2(S, C) + M_PI; }
+	else { teta_3 = atan2(S, C) - M_PI; }
+
+	// Check feasibility
+
+	pos4d_t Q;
+	Q.x = teta_1;
+	Q.y = teta_2;
+	Q.z = teta_3;
+	Q.w = teta_4;
+
+	if ((Q.x > Max_L.x) || (Q.x < Min_L.x) || (Q.y < Min_L.y) || (Q.y > Max_L.y) || (Q.z < Min_L.z)
+		|| (Q.z > Max_L.z) || (Q.w < Min_L.w) || (Q.w > Max_L.w)) {
+
+		//std::cout<<"Exceeding Joint Limits!"<<std::endl; 
+		pos4d_t Q_err_l;
+		Q_err_l.x = Q_err_l.y = Q_err_l.z = Q_err_l.w = 2 * M_PI;
+		return Q_err_l;
+	}
+
+
+	return Q;
+
+}
+
+
 pos4d_t MPC::JointDispR(pos4d_t Joint_value, pos4d_t Max, pos4d_t Min) {
 
 	// Define comfortable position as the mean value between joint limits and resting posture Q = [0, PI/2, PI/2, 0]
@@ -808,6 +953,57 @@ pos4d_t MPC::JointDispR(pos4d_t Joint_value, pos4d_t Max, pos4d_t Min) {
 
 }
 
+pos4d_t MPC::JointDispL(pos4d_t Joint_value, pos4d_t Max, pos4d_t Min) {
+
+	// Define comfortable position as the mean value between joint limits and resting posture Q = [0, PI/2, PI/2, 0] 
+	pos4d_t Diff_l, Q_rest_l, Cost_l;
+
+	double mean = (Min.x + Max.x) / 2;
+	double range = (Max.x - Min.x) / 2;
+	Diff_l.x = pow((mean - Joint_value.x) / range, 2);
+	mean = (Min.y + Max.y) / 2;
+	range = (Max.y - Min.y) / 2;
+	Diff_l.y = pow((mean - Joint_value.y) / range, 2);
+	mean = (Min.z + Max.z) / 2;
+	range = (Max.z - Min.z) / 2;
+	Diff_l.z = pow((mean - Joint_value.z) / range, 2);
+	mean = (Min.w + Max.w) / 2;
+	range = (Max.w - Min.w) / 2;
+	Diff_l.w = pow((mean - Joint_value.w) / range, 2);
+
+	//std::cout<<"Distance Mean "<<Diff_l.x<<" "<<Diff_l.y<<" "<<Diff_l.z<<" "<<Diff_l.w<<std::endl;
+
+	Q_rest_l.x = 0;
+	Q_rest_l.y = M_PI / 2;
+	Q_rest_l.z = 0;
+	Q_rest_l.w = M_PI / 6;
+
+	range = (Max.x - Min.x);
+	Cost_l.x = pow((Q_rest_l.x - Joint_value.x) / range, 2);
+	range = (Max.y - Min.y);
+	Cost_l.y = pow((Q_rest_l.y - Joint_value.y) / range, 2);
+	range = (Max.z - Min.z);
+	Cost_l.z = pow((Q_rest_l.z - Joint_value.z) / range, 2);
+	range = (Max.w - Min.w);
+	Cost_l.w = pow((Q_rest_l.w - Joint_value.w) / range, 2);
+
+	//std::cout<<"Distance Rest "<<Cost_l.x<<" "<<Cost_l.y<<" "<<Cost_l.z<<" "<<Cost_l.w<<std::endl;
+
+	int k1, k2, k3, k4;
+	k1 = 2;
+	k2 = 1;
+	k3 = 0.8;
+	k4 = 0.5;
+
+	Cost_l.x = k2*Cost_l.x + k2*Diff_l.x;
+	Cost_l.y = k1*Cost_l.y + k4*Diff_l.y;
+	Cost_l.z = k3*Cost_l.z + k4*Diff_l.z;
+	Cost_l.w = k4*Cost_l.w + k3*Diff_l.w;
+
+	return Cost_l;
+
+}
+
 
 double MPC::calcSmoothCost(const Eigen::Matrix<double, STATE_DIM, 1>& cur_x,const Eigen::Matrix<double, INPUT_DOF, 1>& cur_u, const int N) {
 
@@ -826,6 +1022,19 @@ double MPC::calcSmoothCost(const Eigen::Matrix<double, STATE_DIM, 1>& cur_x,cons
 	return 0; 
 }
 
+double MPC::calcArmComfort(double cost_L, double cost_R) {
+
+	short P_hand = 1;                                                         //Left or Right handiness penality                   
+
+	cost_L = P_hand + cost_L;
+	double ArmCost = std::min(cost_L, cost_R);
+
+	//std::cout<<"Visibility: "<<VisibCost<<std::endl; 
+	//std::cout<<"Safety: "<<SafeCost<<std::endl; 
+	//std::cout<<"Arm: "<<ArmCost<<std::endl; 
+
+	return ArmCost;
+}
 
 
 ////Partial differentiate the f by u

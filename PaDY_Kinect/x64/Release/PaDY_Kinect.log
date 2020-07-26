@@ -1,3 +1,4 @@
 ﻿C:\Program Files (x86)\MSBuild\Microsoft.Cpp\v4.0\V140\Microsoft.CppBuild.targets(392,5): warning MSB8028: The intermediate directory (x64\Release\) contains files shared from another project (Kinect_silviasan.vcxproj).  This can lead to incorrect clean and rebuild behavior.
-  PaDY_Kinect.vcxproj -> C:\Users\金澤亮\Desktop\PaDY_Kinect\x64\Release\PaDY_Kinect.exe
-  PaDY_Kinect.vcxproj -> C:\Users\金澤亮\Desktop\PaDY_Kinect\x64\Release\PaDY_Kinect.pdb (Full PDB)
+TRACKER : error TRK0005: Failed to locate: "CL.exe". The system cannot find the file specified.
+  
+  

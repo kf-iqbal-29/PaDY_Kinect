@@ -25,8 +25,12 @@ public:
 	double calcVisibCost(const Eigen::Vector2d& angle, double* BodyValues); 
 	double calcSafeCost(const Eigen::Vector2d& angle, double* BodyValues);
 	double calcArmComfortR(pos3d_t ShouldR, double Arm, double Bangle, pos3d_t EndEff);
+	double calcArmComfortL(pos3d_t ShouldR, double Arm, double Bangle, pos3d_t EndEff);
+	double calcArmComfort(double cost_L, double cost_R);
 	pos4d_t InvKineArmR(pos3d_t EndEff_SR, pos3d_t ShouldR, double Arm, double phi);
+	pos4d_t InvKineArmL(pos3d_t EndEff_S, pos3d_t Should, double Arm, double phi);
 	pos4d_t JointDispR(pos4d_t Joint_value, pos4d_t Max, pos4d_t Min);
+	pos4d_t JointDispL(pos4d_t Joint_value, pos4d_t Max, pos4d_t Min);
 	double calcSmoothCost(const Eigen::Matrix<double, STATE_DIM, 1>& cur_x,const Eigen::Matrix<double, INPUT_DOF, 1>& cur_u, const int N);
 
 private:
