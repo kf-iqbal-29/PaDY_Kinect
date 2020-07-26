@@ -320,7 +320,6 @@ void GetState::SwapShoulder(pos3d_t LShould, pos3d_t RShould, double* Left, doub
 	return; 
 }
 
-
 double Min(double a[][4], int n) {
   int j, min, k=0;
  
@@ -345,7 +344,7 @@ void GetState::ReadSampleData() {
 	std::string str;
 	std::stringstream ss;
 	//csvƒtƒ@ƒCƒ‹‚ğ“Ç‚İ‚İ
-	std::ifstream ifs("Input/KinectLogData.csv");
+	std::ifstream ifs("Input/LogKinect.csv");
 
 	if (!ifs) {
 		std::cout << "Error:Input data file not found" << std::endl;

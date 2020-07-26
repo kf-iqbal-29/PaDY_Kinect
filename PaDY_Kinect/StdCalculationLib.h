@@ -74,9 +74,11 @@ namespace StdCalc{
 
 	//X次元正規分布の尤度計算
 	double CalcXdGaussian(const Eigen::Matrix<double, MODEL_DOF, 1>& x, const Eigen::Matrix<double, MODEL_DOF, 1>& mu, const Eigen::Matrix<double, MODEL_DOF, MODEL_DOF>& sigma);
-
+	
 	//計算可能かどうか判定
 	int INFCheck(double x, int mode);
+
+	double max(double a, double b);
 
 };//namespace StdCalc
 

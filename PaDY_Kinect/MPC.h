@@ -33,6 +33,19 @@ public:
 	pos4d_t JointDispL(pos4d_t Joint_value, pos4d_t Max, pos4d_t Min);
 	double calcSmoothCost(const Eigen::Matrix<double, STATE_DIM, 1>& cur_x,const Eigen::Matrix<double, INPUT_DOF, 1>& cur_u, const int N);
 
+	// For log of cost functions
+	#define logSize 10000
+	static double logPhiCost[logSize];
+	static double logBalierCost[logSize];
+	static double logVisibilityCost[logSize];
+	static double logSafetyCost[logSize];
+	static double logTotalCost[logSize];
+	static double logArmCost[logSize];
+	static double logTotalCostMinusArmCost[logSize];
+	static double logArmLCost[logSize];
+	static double logArmRCost[logSize];
+	static double phiCost, balierCost, visibilityCost, safetyCost, armCost, armRCost, armLCost;
+
 private:
 
 	static const double EPS;//Small value
@@ -54,7 +67,7 @@ private:
 	void calcInertiaMat(const Eigen::Vector2d& q); //Calculate Inertia Matrix
 	void calcCoriolisTerm(const Eigen::Vector2d& q, const Eigen::Vector2d& dq);//Calculate the Coriolis term
 	double calcObjective(const Eigen::VectorXd& x_seq, const Eigen::VectorXd& u_seq, const int N, pos3d_t LShould, pos3d_t RShould, pos3d_t Body, double length_arm, double* BodyValues);                          //Calculate the total cost function
-	double calcObjectivePhi(const Eigen::Matrix<double, STATE_DIM, 1>& goal_x, const int N);//Calculate the cost function Phi
+	//double calcObjectivePhi(const Eigen::Matrix<double, STATE_DIM, 1>& goal_x, const int N);//Calculate the cost function Phi
 	double calcObjectiveB(const Eigen::Matrix<double, STATE_DIM, 1>& cur_x, const Eigen::Matrix<double, INPUT_DOF, 1>& cur_u);//Calculate the cost function B
 	double calcHamiltonian(const Eigen::Matrix<double, STATE_DIM, 1>& cur_x, const Eigen::Matrix<double, INPUT_DOF, 1>& cur_u, const Eigen::Matrix<double, STATE_DIM, 1>& cur_lmd, pos3d_t LShould, pos3d_t RShould, pos3d_t Body, double length_arm, double* BodyValues, const int N);//Calculate the Hamiltonian function
 	void calcdHdu(Eigen::Matrix<double, 1, INPUT_DOF>& dHdu, const Eigen::Matrix<double, STATE_DIM, 1>& cur_x, const Eigen::Matrix<double, STATE_DIM, 1>& cur_lmd);//Partial differentiate the Hamiltonian function by u

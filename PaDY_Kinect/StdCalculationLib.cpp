@@ -149,3 +149,11 @@ int StdCalc::INFCheck(double x, int mode)
 
 	return 0;
 }
+
+double StdCalc::max(double a, double b)
+{
+	if (a>b)
+		return a;
+	else
+		return b;
+}

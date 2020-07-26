@@ -10,6 +10,9 @@
 #include "ArmParams.h"
 //#include "GMM.h" //20200628
 
+#define distance_for_termination 0.15  // The distance between end-effector and worker body that would fulfill the termination condition
+#define velocity_for_termination 0.1 // The velocity difference between end-effector velocity and desired velocity that would fulfill the termination condition
+
 #define SAMPLING_TIME 30 //(ms)
 #define RSTART_TIMING 100
 
@@ -19,9 +22,6 @@
 #define OFFSET_X 0.7       //(m)
 #define OFFSET_Y 0.5       //(m)
 #define LOG_SIZE 100000
-
-#define distance_for_termination 0.35  // The distance between end-effector and worker body that would fulfill the termination condition
-#define velocity_for_termination 0.1 // The velocity difference between end-effector velocity and desired velocity that would fulfill the termination condition
 
 GetState* kinect;//Object for Kinect and linear filter
 Linear* MAF;	// MAF = Moving Average Filter
@@ -89,13 +89,13 @@ void WriteKinectLog()
 	std::cout << "----------  Kinect Log Start  ----------" << std::endl;
 
 	//Open the csv file
-	std::ofstream ofs("KinectLogData.csv");
-	ofs << "Time" << "," << "Body[x]" << "," << "Body[y]" << "," << "Body[z]"
-		<< "," << "Left Shoulder [x]" << "," << "Left Shoulder [y]" << "," << "Left Shoulder [z]"
-		<< "," << "Right Shoulder [x]" << "," << "Right Shoulder [y]" << "," << "Right Shoulder [z]"
-		<< "," << "Right Elbow [x]" << "," << "Right Elbow [y]" << "," << "Right Elbow [z]"
-		<< "," << "Right Hand [x]" << "," << "Right Hand [y]" << "," << "Right Hand [z]";
-
+	std::ofstream ofs("LogKinect.csv");
+	ofs << "Time" << "," 
+		<< "Body[x]" << "," << "Body[y]" << "," << "Body[z]"<< "," 
+		<< "Left Shoulder [x]" << "," << "Left Shoulder [y]" << "," << "Left Shoulder [z]" << "," 
+		<< "Right Shoulder [x]" << "," << "Right Shoulder [y]" << ","<< "Right Shoulder [z]" << "," 
+		<< "Right Elbow [x]" << "," << "Right Elbow [y]" << "," << "Right Elbow [z]" << "," 
+		<< "Right Hand [x]" << "," << "Right Hand [y]" << "," << "Right Hand [z]";
 	ofs << std::endl;
 	for (int i = 0; i < kinect_counter; ++i) {
 		ofs << i * SAMPLING_TIME * 0.001 << ","
@@ -111,6 +111,43 @@ void WriteKinectLog()
 
 	std::cout << "----------  Kinect Log Finish  ----------" << std::endl;
 
+}
+
+void WriteCostLog()
+{
+	std::cout << "----------  Cost Log Start  ----------" << std::endl;
+
+	//Open the csv file
+	std::ofstream ofs("LogCostFunctions.csv");
+	ofs << "Step [n]" << "," 
+		<< "Total Cost" << "," 
+		<<"Total Cost Minus Arm Cost" << ","
+		<< "Phi Cost" << "," 
+		<< "Baliar Cost"<< "," 
+		<< "Safety Cost" << "," 
+		<< "Visibility Cost" << "," 
+		<< "Arm Comfort"<< "," 
+		<< "Arm R Comfort" << "," 
+		<< "Arm L Comfort" << "," 
+		<< std::endl;
+
+	for (int i = 0; i < logSize; ++i) {
+		ofs << i << ","
+			<< MPC::logTotalCost[i] << "," 
+			<< MPC::logTotalCostMinusArmCost[i] << ","
+			<< MPC::logPhiCost[i] << "," 
+			<< MPC::logBalierCost[i]<< ","
+			<< MPC::logSafetyCost[i] << "," 
+			<< MPC::logVisibilityCost[i] << "," 
+			<< MPC::logArmCost[i] << ","
+			<< MPC::logArmRCost[i] << "," 
+			<< MPC::logArmLCost[i] << "," 
+			<< std::endl;
+	}
+	ofs.close();
+
+
+	std::cout << "----------  Cost Log Finish  ----------" << std::endl;
 }
 
 //Show the color image
@@ -218,12 +255,14 @@ void StartCounter()
 	QueryPerformanceCounter(&li);
 	CounterStart = li.QuadPart;
 }
+
 double GetCounter()
 {
 	LARGE_INTEGER li;
 	QueryPerformanceCounter(&li);
 	return double(li.QuadPart - CounterStart) / PCFreq;
 }
+
 void logCalcTime(double total_time)
 {
 	//Open the csv file
@@ -261,7 +300,7 @@ int main()
 	double FTrackState = 0;//Tracking state of face
 	double FaceFilt[2]; 
 
-	HANDLE hThread;//Handle of thread for showing the color image
+	HANDLE hThread;		//Handle of thread for showing the color image
 
 	//Generate the object for Kinect and filters
 	kinect = new GetState();  
@@ -364,11 +403,21 @@ int main()
 		pos2d_t orient;
 		orient.y = (LShould.y - RShould.y);
 		orient.x = (LShould.x - RShould.x);
-		double Bangle = atan2(-(orient.x), (orient.y));
+		double Bangle = atan2((orient.y), (orient.x));
 		BodyValues[0] = Bangle;
 		BodyValues[1] = Body.x;
 		BodyValues[2] = Body.y;
 
+		// Original Version
+		//orient.y = (LShould.y - RShould.y);
+		//orient.x = (LShould.x - RShould.x);
+		//double Bangle = atan2(-(orient.x), (orient.y));
+		//BodyValues[0] = Bangle;
+		//BodyValues[1] = Body.x;
+		//BodyValues[2] = Body.y;
+
+
+		
         /* Analize different branches of the RRT for the same detected body position */
 		/*for(j=0; j<20; j++) {
 			Output = kinect->TRRT(LShould, RShould, Body, Arm_Length, BodyValues); 
@@ -547,6 +596,7 @@ int main()
 
 	//Write the log data in csv file
 	WriteLog();
+	WriteCostLog();
 
 	if (useKinect)
 		WriteKinectLog();

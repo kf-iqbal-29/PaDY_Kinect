@@ -3,6 +3,7 @@
 #include<sstream>
 #include<fstream>
 #include <iostream>
+#include"StdCalculationLib.h"
 
 //#define DEBUG //For debug
 #define SAMPLING_TIME 30 //(ms) 
@@ -16,7 +17,18 @@ const double MPC::R_C3 = 1000.0;
 const double MPC::R_C4 = 1000.0;  
 
 
-
+// For log of cost functions
+double MPC::logPhiCost[logSize];
+double MPC::logBalierCost[logSize];
+double MPC::logVisibilityCost[logSize];
+double MPC::logSafetyCost[logSize];
+double MPC::logTotalCost[logSize];
+double MPC::logTotalCostMinusArmCost[logSize];
+double MPC::logArmCost[logSize];
+double MPC::logArmRCost[logSize];
+double MPC::logArmLCost[logSize];
+double MPC::phiCost = 0, MPC::balierCost = 0, MPC::visibilityCost = 0, MPC::safetyCost = 0;
+double MPC::armCost = 0, MPC::armRCost=0, MPC::armLCost=0;
 
 MPC::MPC()
 {   /* Initialize weighting matrix */ 
@@ -248,6 +260,17 @@ int MPC::calcInputbyGradientMethod(Eigen::Matrix<double, INPUT_DOF, 1>& input, c
 			//ofs2<< n<<","<<temp_log(0)<<","<<temp_log(1)<<std::endl; 
 		}
 		J = calcObjective(x, temp_u, STEP_N, LShould, RShould, Body, length_arm, BodyValues);
+
+		// store log of cost values
+		MPC::logTotalCost[STEP_N] = J;
+		MPC::logPhiCost[STEP_N] = MPC::phiCost;
+		MPC::logBalierCost[STEP_N] = MPC::balierCost;
+		MPC::logSafetyCost[STEP_N] = MPC::safetyCost;
+		MPC::logVisibilityCost[STEP_N] = MPC::visibilityCost;
+		MPC::logArmCost[STEP_N] = MPC::armCost;
+		MPC::logArmRCost[STEP_N] = MPC::armRCost;
+		MPC::logArmLCost[STEP_N] = MPC::armLCost;
+		MPC::logTotalCostMinusArmCost[STEP_N] = J - MPC::armCost;
 		
 		//ofs2<<std::endl; 
 		//ofs2.close(); 
@@ -297,7 +320,6 @@ int MPC::calcInputbyGradientMethod(Eigen::Matrix<double, INPUT_DOF, 1>& input, c
 
 	return 1;
 }
-
 
 //Calculate the gradient vector
 void MPC::calcGradient(Eigen::VectorXd& F, Eigen::VectorXd& x, const Eigen::VectorXd& cur_x, const Eigen::VectorXd& cur_u, const int N, const double dt, pos3d_t LShould, pos3d_t RShould, pos3d_t Body, double length_arm, double* BodyValues)
@@ -371,15 +393,70 @@ void MPC::calcGradient(Eigen::VectorXd& F, Eigen::VectorXd& x, const Eigen::Vect
 
 }
 
-//Calculate the the total cost function J = Phi(xN) + sumB(x)
+//Calculate the Hamiltonian function
+double MPC::calcHamiltonian(const Eigen::Matrix<double, STATE_DIM, 1>& cur_x, const Eigen::Matrix<double, INPUT_DOF, 1>& cur_u, const Eigen::Matrix<double, STATE_DIM, 1>& cur_lmd, pos3d_t LShould, pos3d_t RShould, pos3d_t Body, double length_arm, double* BodyValues, const int N)
+{
+	double objB, objV, objS, objA_L, objA_R, objA;
+	Eigen::Matrix<double, 1, 1> objF;
+	Eigen::Matrix<double, STATE_DIM, 1> f;
+	Eigen::Matrix<double, STATE_DIM / 2, 1> end_pos;
+	pos3d_t EndEff;
+
+	//Calculate the cost function B
+	objB = calcObjectiveB(cur_x, cur_u);
+#ifdef DEBUG
+	std::cout << objB << std::endl;
+#endif //DEBUG
+
+	//Calculate Visibility Cost
+	objV = calcVisibCost(cur_x.block<2, 1>(0, 0), BodyValues);
+	//Calculate Safety Cost
+	objS = calcSafeCost(cur_x.block<2, 1>(0, 0), BodyValues);
+	//Calculate Arm Comfort Cost
+	JointAngle2EndPosition(end_pos, cur_x.block<2, 1>(0, 0));
+	EndEff.x = end_pos(0);
+	EndEff.y = end_pos(1);
+	EndEff.z = 0;
+	objA_R = calcArmComfortR(RShould, length_arm, BodyValues[0], EndEff);
+	objA_L = calcArmComfortL(LShould, length_arm, BodyValues[0], EndEff);
+	objA = calcArmComfort(objA_L, objA_R);
+
+	//Calculate the State equation
+	calcStateFunc(f, cur_x, cur_u);
+	objF = cur_lmd.transpose() * f;
+
+#ifdef DEBUG
+	std::cout << "ObjF is" << objF << std::endl;
+	std::cout << "objF(0,0) is: " << objF(0, 0) << std::endl;
+#endif //DEBUG
+
+	return (objS + objV + objA + objB + objF(0, 0));                  // H(x,u,lmd) = B(x) + lmd^T * f(x,u)
+}
+
+//Partial differentiate the Hamiltonian function by u
+void MPC::calcdHdu(Eigen::Matrix<double, 1, INPUT_DOF>& dHdu, const Eigen::Matrix<double, STATE_DIM, 1>& cur_x, const Eigen::Matrix<double, STATE_DIM, 1>& cur_lmd)
+{
+	Eigen::Matrix<double, STATE_DIM, INPUT_DOF> tempF;
+	Eigen::Matrix<double, STATE_DIM, 1> f;
+
+	//Partial differential of f w.r.t u is [0 M]'
+	calcInertiaMat(cur_x.block<2, 1>(0, 0));
+	tempF.block<2, 2>(0, 0).setZero();
+	tempF.block<2, 2>(2, 0) = M.inverse();
+
+	dHdu = cur_lmd.transpose() * tempF;         // dH/du = -lmd^T * df/du
+
+}
+
+//Calculate the total cost function J = Phi(xN) + sumB(x)
 double MPC::calcObjective(const Eigen::VectorXd& x_seq, const Eigen::VectorXd& u_seq, const int N, pos3d_t LShould, pos3d_t RShould, pos3d_t Body, double length_arm, double* BodyValues)
 {
-	double Phi, B, V, S, A_R,A_L,A;
+	double PhiDash, B, V, S, A_R,A_L,A;
 	Eigen::Matrix<double, STATE_DIM / 2, 1> end_pos;
 	pos3d_t EndEff;
 
 	//Calculate the cost function PhiDash on x(N)
-	Phi = calcObjectivePhiDash(x_seq.block<STATE_DIM, 1>((STATE_DIM * N), 0),N);
+	PhiDash = calcObjectivePhiDash(x_seq.block<STATE_DIM, 1>((STATE_DIM * N), 0),N);
 
 	//Calculate the cost function B for all the N intervals
 	B = 0;
@@ -418,17 +495,31 @@ double MPC::calcObjective(const Eigen::VectorXd& x_seq, const Eigen::VectorXd& u
 
 	//std::cout<<"Phi "<<Phi<<" vs Safe "<<S<<std::endl; 
 
-	return (Phi + B + V + S + A);
+	MPC::phiCost = PhiDash;
+	MPC::balierCost = B;
+	MPC::visibilityCost = V;
+	MPC::safetyCost = S;
+	MPC::armCost = A;
+	MPC::armRCost = A_R;
+	MPC::armLCost = A_L;
+	
+	return (PhiDash + B + V + S + A);
 }
 
 
+
 //Calculate the cost function Phi on final state constraint
+/*
 double MPC::calcObjectivePhi(const Eigen::Matrix<double, STATE_DIM, 1>& goal_x, const int N)
 {
 	Eigen::Vector2d end_pos, end_vel;
 	Eigen::Matrix<double, STATE_DIM, 1> x_end, diff;
 	double temp;
-	/*
+
+	// S is now defined in MPC contructor as"
+
+
+	//
 	if(N>=20) {
 		S(0, 0) = 150.0;
 		S(1, 1) = 150.0;
@@ -439,9 +530,10 @@ double MPC::calcObjectivePhi(const Eigen::Matrix<double, STATE_DIM, 1>& goal_x, 
 		S(1, 1) = 300.0;
 		S(2, 2) = 20.0;
 		S(3, 3) = 20.0;}
-		*/
-	JointAngle2EndPosition(end_pos, goal_x.block<2, 1>(0, 0));
-	JointVel2EndVel(end_vel, goal_x.block<2, 1>(0, 0), goal_x.block<2, 1>(2, 0));
+	//
+
+	JointAngle2EndPosition(end_pos, goal_x.block<2, 1>(0, 0)); // end_pos is the output
+	JointVel2EndVel(end_vel, goal_x.block<2, 1>(0, 0), goal_x.block<2, 1>(2, 0)); //end_vel is the output
 	x_end.block<2, 1>(0, 0) = end_pos;
 	x_end.block<2, 1>(2, 0) = end_vel;
 
@@ -449,6 +541,7 @@ double MPC::calcObjectivePhi(const Eigen::Matrix<double, STATE_DIM, 1>& goal_x, 
 	temp = diff.transpose() * S * diff;
 	return  temp;
 }
+*/
 
 //Calculate the cost function PhiDash on final state constraint. Velocity only. Not position
 // Final velocity should be zero so we do not need to take the difference.
@@ -480,7 +573,7 @@ double MPC::calcObjectivePhiDash(const Eigen::Matrix<double, STATE_DIM, 1>& goal
 }
 
 
-//Calculate cost function B to penalize configurations exceeding limits
+//Calculate Baliar Function Cost to penalize configurations exceeding limits
 double MPC::calcObjectiveB(const Eigen::Matrix<double, STATE_DIM, 1>& cur_x, const Eigen::Matrix<double, INPUT_DOF, 1>& cur_u)
 {
 	double c1, c2, c3, c4;
@@ -509,115 +602,79 @@ double MPC::calcObjectiveB(const Eigen::Matrix<double, STATE_DIM, 1>& cur_x, con
 	
 }
 
+// Calculate Safety Cost
+double MPC::calcSafeCost(const Eigen::Vector2d& joint_ang, double* BodyValues) {
 
-//Calculate the Hamiltonian function
-double MPC::calcHamiltonian(const Eigen::Matrix<double, STATE_DIM, 1>& cur_x, const Eigen::Matrix<double, INPUT_DOF, 1>& cur_u, const Eigen::Matrix<double, STATE_DIM, 1>& cur_lmd, pos3d_t LShould, pos3d_t RShould, pos3d_t Body, double length_arm, double* BodyValues, const int N)
-{
-	double objB, objV, objS, objA_L, objA_R, objA;
-	Eigen::Matrix<double, 1, 1> objF;
-	Eigen::Matrix<double, STATE_DIM, 1> f;
-	Eigen::Matrix<double, STATE_DIM/2, 1> end_pos;
-	pos3d_t EndEff;
+	Eigen::Vector2d EE_pos, C_point1, C_point2;
+	JointAngle2EndPosition(EE_pos, joint_ang);	//EE_pos is the output
 
-	//Calculate the cost function B
-	objB = calcObjectiveB(cur_x, cur_u);
-#ifdef DEBUG
-	std::cout << objB << std::endl;
-#endif //DEBUG
+												// Safety cost obtained by inverse distance between End Effector and Body center
+	double d_min = 0.2;  // Minimum distance at which safety cost becomes maximum
+	double d_max = 0.7; // Maximum distance beyond which safety cost becomes 0
+	double ks = 1;
+	double gamma = 3;
+	double SafetyCost1, SafetyCost2, SafetyCost3;
 
-	//Calculate Visibility Cost
-	objV = calcVisibCost(cur_x.block<2, 1>(0, 0), BodyValues); 
-    //Calculate Safety Cost
-	objS = calcSafeCost(cur_x.block<2, 1>(0, 0), BodyValues);
-	//Calculate Arm Comfort Cost
-	JointAngle2EndPosition(end_pos, cur_x.block<2, 1>(0, 0));
-	EndEff.x = end_pos(0);
-	EndEff.y = end_pos(1);
-	EndEff.z = 0;
-	objA_R = calcArmComfortR(RShould, length_arm, BodyValues[0], EndEff);
-	objA_L = calcArmComfortL(LShould, length_arm, BodyValues[0], EndEff);
-	objA = calcArmComfort(objA_L, objA_R);
+	// Safety Cost 1: Distance from end effector
+	double dist1 = sqrt(pow((EE_pos(0) - BodyValues[1]), 2) + pow((EE_pos(1) - BodyValues[2]), 2));
+	if (dist1 < d_min)
+		SafetyCost1 = 1000;
+	else if (dist1 > d_max)
+		SafetyCost1 = 0;
+	else
+		SafetyCost1 = ks / gamma * pow((1 / dist1 - 1 / d_max), gamma);
 
-	//Calculate the State equation
-	calcStateFunc(f, cur_x, cur_u);
-	objF = cur_lmd.transpose() * f;
+	// Safety Cost 2: Distance from halfway up the second link
+	C_point1(0) = L1*cos(joint_ang(0)) + 0.5*L2*cos(joint_ang(0) + joint_ang(1));
+	C_point1(1) = L1*sin(joint_ang(0)) + 0.5*L2*sin(joint_ang(0) + joint_ang(1));
+	double dist2 = sqrt(pow((C_point1(0) - BodyValues[1]), 2) + pow((C_point1(1) - BodyValues[2]), 2));
+	if (dist2 < d_min)
+		SafetyCost2 = 1000;
+	else if (dist2 > d_max)
+		SafetyCost2 = 0;
+	else
+		SafetyCost2 = ks / gamma * pow((1 / dist2 - 1 / d_max), gamma);
 
-#ifdef DEBUG
-	std::cout << "ObjF is" << objF << std::endl;
-	std::cout << "objF(0,0) is: "<<objF(0, 0) << std::endl;
-#endif //DEBUG
-	
-	return (objS + objV + objA + objB + objF(0, 0));                  // H(x,u,lmd) = B(x) + lmd^T * f(x,u)
+	// Saftery Cost 3: Distance from three quarter up the second link
+	C_point2(0) = L1*cos(joint_ang(0)) + 0.75*L2*cos(joint_ang(0) + joint_ang(1));
+	C_point2(1) = L1*sin(joint_ang(0)) + 0.75*L2*sin(joint_ang(0) + joint_ang(1));
+	double dist3 = sqrt(pow((C_point2(0) - BodyValues[1]), 2) + pow((C_point2(1) - BodyValues[2]), 2));
+	if (dist3 < d_min)
+		SafetyCost3 = 1000;
+	else if (dist3 > d_max)
+		SafetyCost3 = 0;
+	else
+		SafetyCost3 = ks / gamma * pow((1 / dist3 - 1 / d_max), gamma);
+
+	double S = SafetyCost1 + SafetyCost2 + SafetyCost3;
+
+	if (S < 0)
+		S = 0;
+	else if (S > 1000)
+		S = 1000;
+
+	return  S;
 }
 
-//Partial differentiate the Hamiltonian function by u
-void MPC::calcdHdu(Eigen::Matrix<double, 1, INPUT_DOF>& dHdu, const Eigen::Matrix<double, STATE_DIM, 1>& cur_x,  const Eigen::Matrix<double, STATE_DIM, 1>& cur_lmd)
-{
-	Eigen::Matrix<double, STATE_DIM, INPUT_DOF> tempF;
-	Eigen::Matrix<double, STATE_DIM, 1> f;
-
-	//Partial differential of f w.r.t u is [0 M]'
-	calcInertiaMat(cur_x.block<2, 1>(0, 0));  
-	tempF.block<2, 2>(0, 0).setZero();
-	tempF.block<2, 2>(2, 0) = M.inverse();
-
-	dHdu = cur_lmd.transpose() * tempF;         // dH/du = -lmd^T * df/du
-
-}
-
-
+// Calculate Visibility Cost
 double MPC::calcVisibCost(const Eigen::Vector2d& joint_ang, double* BodyValues){
 
 	Eigen::Vector2d end_pos; 
-	JointAngle2EndPosition(end_pos, joint_ang);
-	short k = 3; 
+	const double VisibleRegion = M_PI / 2.0;
+	JointAngle2EndPosition(end_pos, joint_ang); // end_pos is the output
+	short kv = 3; // 1 in new sytem
 	
 	pos2d_t Diff; 	
 	Diff.x = (end_pos(0) - BodyValues[1])*cos(BodyValues[0]) + (end_pos(1) - BodyValues[2])*sin(BodyValues[0]); 
 	Diff.y = -(end_pos(0) - BodyValues[1])*sin(BodyValues[0]) + (end_pos(1) - BodyValues[2])*cos(BodyValues[0]); 
 
-	double RBangle = (atan2((Diff.y),(Diff.x)));                 // Orientation of vector from body to EndEffector wrt +x axis
+	double RBangle = (atan2((Diff.y),(Diff.x)));  // Orientation of vector from body to EndEffector wrt +x axis
 
-	double VisCost = k*((RBangle)*(RBangle)); 
+	//RBangle = StdCalc::max(fabs(RBangle) - VisibleRegion, 0);
+
+	double VisCost = 0.5 * kv * RBangle * RBangle; 
 	
 	return VisCost; 
-}
-
-
-double MPC::calcSafeCost(const Eigen::Vector2d& joint_ang, double* BodyValues){
-
-	Eigen::Vector2d EE_pos, C_point1, C_point2; 
-	JointAngle2EndPosition(EE_pos, joint_ang);
-
-	// Safety cost obtained by inverse distance between End Effector and Body center
-	int k1 = 3; 
-	double k2 = 0.5; 
-	double d_max = 0.7; 
-	double SafeCost, SafeCost2; 
-
-	double dist = sqrt(pow((EE_pos(0) - BodyValues[1]),2) + pow((EE_pos(1) - BodyValues[2]),2)); 
-	C_point1(0) = L1*cos(joint_ang(0)) + 0.5*L2*cos(joint_ang(0)+joint_ang(1));
-	C_point1(1) = L1*sin(joint_ang(0)) + 0.5*L2*sin(joint_ang(0)+joint_ang(1));
-	C_point2(0) = L1*cos(joint_ang(0)) + 0.75*L2*cos(joint_ang(0)+joint_ang(1));
-	C_point2(1) = L1*sin(joint_ang(0)) + 0.75*L2*sin(joint_ang(0)+joint_ang(1));
-	double dist2 = sqrt(pow((C_point1(0) - BodyValues[1]),2) + pow((C_point1(1) - BodyValues[2]),2)); 
-	double dist3 = sqrt(pow((C_point2(0) - BodyValues[1]),2) + pow((C_point2(1) - BodyValues[2]),2)); 
-
-	if(dist < 0.20) {
-		   SafeCost = 1000; }
-	if(dist > d_max) 
-		SafeCost = 0; 
-	if(dist2 > d_max || dist3 > d_max)
-		SafeCost2 = 0; 
-	if(dist2 < 0.20 || dist3 < 0.20 ) { 
-		//std::cout<<"Ouch!"<<std::endl; 
-		SafeCost2 = 1000; }
-	else {
-		   SafeCost = k2*pow((1/dist - 1/d_max),k1)/k1;   
-	       SafeCost2 = 0.5*k2*pow((1/dist2 - 1/d_max),k1)/k1 + 0.5*k2*pow((1/dist3 - 1/d_max),k1)/k1;}
-
-	return SafeCost + SafeCost2; 
-	//return 0; 
 }
 
 double MPC::calcArmComfortR(pos3d_t ShouldR, double Arm, double Bangle, pos3d_t EndEff){
@@ -900,7 +957,6 @@ pos4d_t MPC::InvKineArmL(pos3d_t EndEff_S, pos3d_t Should, double Arm, double ph
 	return Q;
 
 }
-
 
 pos4d_t MPC::JointDispR(pos4d_t Joint_value, pos4d_t Max, pos4d_t Min) {
 
